@@ -17,7 +17,7 @@ from kivy.app import App
 from kivy.uix.widget import Widget
 from kivy.uix.image import Image
 from kivy.uix.label import Label
-from kivy.graphics import Color, Rectangle, Ellipse, Line
+from kivy.graphics import Color, Rectangle, Ellipse, Line, PushMatrix, PopMatrix, Rotate
 from kivy.clock import Clock
 
 # ---------------------------------------------------------------
@@ -43,6 +43,12 @@ COIN_COLOR = (1.0, 0.85, 0.15, 1)
 
 LANE_BG_COLOR = (0.14, 0.14, 0.17, 1)
 LANE_LINE_COLOR = (0.4, 0.4, 0.46, 1)
+
+# --- kosma efekti ayarlari ---
+BOB_AMPLITUDE_RATIO = 0.035  # ekran yuksekligine oranla zipla-sallanma miktari
+TILT_MAX_DEG = 7.0           # kosarken sag-sol yatis acisi
+RUN_CYCLE_BASE = 7.5         # temel adim hizi (saniyede dongu)
+DUST_COLOR = (0.55, 0.55, 0.55, 1)
 
 
 class GameWidget(Widget):
@@ -71,6 +77,11 @@ class GameWidget(Widget):
         self.spawn_timer = 0.0
         self.road_scroll = 0.0
 
+        # --- kosma efekti durumu ---
+        self.run_cycle = 0.0
+        self.dust = []                  # her biri dict: x,y,age,life
+        self.dust_timer = 0.0
+
         self.char_w = 60.0
         self.char_h = 100.0
 
@@ -82,6 +93,13 @@ class GameWidget(Widget):
             size_hint=(None, None),
         )
         self.add_widget(self.char_img)
+
+        # karakteri hafifce dondurebilmek icin (kosarken yatis efekti)
+        with self.char_img.canvas.before:
+            PushMatrix()
+            self.char_rotate = Rotate(angle=0, origin=(0, 0), axis=(0, 0, 1))
+        with self.char_img.canvas.after:
+            PopMatrix()
 
         # --- skor / mesaj etiketleri ---
         self.score_label = Label(
@@ -162,6 +180,9 @@ class GameWidget(Widget):
         self.coins = []
         self.spawn_timer = 1.0
         self.road_scroll = 0.0
+        self.run_cycle = 0.0
+        self.dust = []
+        self.dust_timer = 0.0
         self.gameover_label.text = ""
         self.score_final_label.text = ""
         self.restart_label.text = ""
@@ -254,6 +275,30 @@ class GameWidget(Widget):
             if self.slide_t >= SLIDE_DURATION:
                 self.sliding = False
                 self.slide_t = 0.0
+
+        # kosu adim dongusu (yerde kosarken hizlanir)
+        cycle_speed = RUN_CYCLE_BASE * (0.6 + self.speed / BASE_SPEED * 0.5)
+        self.run_cycle += dt * cycle_speed
+
+        # ayak tozu efekti (sadece yerdeyken, zipliyorken degil)
+        if not self.jumping:
+            self.dust_timer -= dt
+            if self.dust_timer <= 0:
+                self.dust_timer = max(0.07, 0.17 - self.speed / 6000.0)
+                self.dust.append({
+                    "x": self.player_x + random.uniform(-self.char_w * 0.18, self.char_w * 0.18),
+                    "y": self.player_y - self.char_h * 0.06,
+                    "age": 0.0,
+                    "life": 0.32,
+                })
+
+        still_dust = []
+        for d in self.dust:
+            d["age"] += dt
+            d["y"] -= dt * 40
+            if d["age"] < d["life"]:
+                still_dust.append(d)
+        self.dust = still_dust
 
         self.road_scroll = (self.road_scroll + self.speed * dt) % 80.0
 
@@ -349,19 +394,29 @@ class GameWidget(Widget):
         self.restart_label.pos = ((self.width - self.restart_label.width) / 2.0,
                                    self.height / 2.0 - 95)
 
-        # karakter gorseli konumu (zipla / kay animasyonu)
+        # karakter gorseli konumu (zipla / kay / kosu sallanmasi)
         jump_offset = 0.0
         squash = 1.0
+        bob_offset = 0.0
+        tilt_deg = 0.0
+
         if self.jumping:
             phase = self.jump_t / JUMP_DURATION
             jump_offset = math.sin(phase * math.pi) * self.height * JUMP_HEIGHT_RATIO
         if self.sliding:
             squash = 0.55
 
+        if self.state == "playing" and not self.jumping and not self.sliding:
+            bob_offset = abs(math.sin(self.run_cycle)) * self.height * BOB_AMPLITUDE_RATIO
+            tilt_deg = math.sin(self.run_cycle) * TILT_MAX_DEG
+
         w = self.char_w
         h = self.char_h * squash
         self.char_img.size = (w, h)
-        self.char_img.pos = (self.player_x - w / 2.0, self.player_y + jump_offset)
+        self.char_img.pos = (self.player_x - w / 2.0, self.player_y + jump_offset + bob_offset)
+
+        self.char_rotate.origin = self.char_img.center
+        self.char_rotate.angle = tilt_deg
 
     def redraw(self):
         self.canvas.clear()
@@ -378,6 +433,13 @@ class GameWidget(Widget):
                 while y < self.height:
                     Line(points=[x, y, x, y + 40], width=1.5)
                     y += 80
+
+            # ayak tozu efekti
+            for d in self.dust:
+                alpha = max(0.0, 1.0 - d["age"] / d["life"]) * 0.55
+                Color(DUST_COLOR[0], DUST_COLOR[1], DUST_COLOR[2], alpha)
+                r = 6 + (d["age"] / d["life"]) * 10
+                Ellipse(pos=(d["x"] - r / 2.0, d["y"] - r / 2.0), size=(r, r))
 
             # engeller
             for ob in self.obstacles:
@@ -417,3 +479,4 @@ class RunnerApp(App):
 
 if __name__ == "__main__":
     RunnerApp().run()
+  
