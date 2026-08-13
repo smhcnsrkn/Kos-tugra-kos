@@ -1,0 +1,48 @@
+name: APK Derle
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Kodu al
+        uses: actions/checkout@v4
+
+      - name: Java kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Python kur
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Sistem bagimliliklarini kur
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip autoconf libtool pkg-config zlib1g-dev libncurses-dev cmake libffi-dev libssl-dev build-essential
+
+      - name: Buildozer kur
+        run: |
+          pip install buildozer==1.5.0 cython==0.29.33
+
+      - name: Pip kisitlama dosyasi olustur
+        run: echo "pip<26" > /tmp/pip-constraint.txt
+
+      - name: APK derle
+        env:
+          PIP_CONSTRAINT: /tmp/pip-constraint.txt
+        run: |
+          yes | buildozer -v android debug
+
+      - name: APK'yi yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-dosyasi
+          path: bin/*.apk
