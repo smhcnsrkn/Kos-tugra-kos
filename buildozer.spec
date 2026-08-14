@@ -4,6 +4,7 @@ package.name = tugrakosuyor
 package.domain = org.aile
 source.dir = .
 source.include_exts = py,png
+icon.filename = %(source.dir)s/icon.png
 version = 1.0
 requirements = python3,kivy
 orientation = portrait
